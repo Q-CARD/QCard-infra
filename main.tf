@@ -2,20 +2,6 @@ provider "aws" {
   region = "ap-northeast-2"
 }
 
-resource "null_resource" "generate_ssh_key" {
-  provisioner "local-exec" {
-    command = "ssh-keygen -t rsa -b 2048 -f ${path.module}/ssh/id_rsa -N ''"
-  }
-}
-
-output "public_key" {
-  value = file("${path.module}/ssh/id_rsa.pub")
-}
-
-output "private_key" {
-    value = file("./id_rsa")
-}
-
 resource "aws_key_pair" "qcard-keypair" {
   key_name = "qcard-kafka-key"
   public_key = file("${path.module}/ssh/id_rsa.pub")
@@ -73,17 +59,31 @@ resource "aws_instance" "qcard-kafka" {
     Name = "qcard-kafka"
   }
 
+  provisioner "file" {
+    source      = "./kafka/docker-compose.yaml"
+    destination = "/home/ubuntu/docker-compose.yaml"
+
+    connection {
+      type = "ssh"
+      user = "ubuntu"
+      private_key = file("${path.module}/ssh/id_rsa") 
+      host = aws_instance.qcard-kafka.public_ip
+    }
+  }
+
   provisioner "remote-exec" {
     inline = [
-        "chmod +x ./kafka/install_docker.sh",
-        "./kafka/install_docker.sh",
-        "sudo docker-compose -f ./kafka/docker-compose.yaml up -d"
+        "sudo apt update",
+        "sudo snap install docker",
+        "sudo service docker start",
+        "sudo usermod -aG docker $USER",
+        "sudo docker-compose -f ./docker-compose.yaml up -d"
     ]
 
     connection {
       type = "ssh"
       user = "ubuntu"
-      private_key = aws_key_pair.qcard-keypair.private_key_pem
+      private_key = file("${path.module}/ssh/id_rsa") 
       host = aws_instance.qcard-kafka.public_ip
     }
   }
